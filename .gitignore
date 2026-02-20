@@ -205,3 +205,11 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# OAuth secrets
+token.json
+client_secret_*.json
+*.credentials.json
+
+# Local pyenv version
+.python-version
