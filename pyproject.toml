@@ -10,4 +10,5 @@ dependencies = [
     "google-auth>=2.48.0",
     "google-auth-oauthlib>=1.2.4",
     "mcp>=1.26.0",
+    "streamlit>=1.54.0",
 ]
