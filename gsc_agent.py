@@ -12,7 +12,7 @@ gsc_mcp_server.py を子プロセスとして起動し、Claude がツールを�
 
 import asyncio
 import os
-
+from dotenv import load_dotenv
 import anthropic
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -20,7 +20,9 @@ from mcp.client.stdio import stdio_client
 # =====================
 # 設定
 # =====================
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+# ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+load_dotenv()
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 MODEL = "claude-opus-4-6"
 
 SYSTEM_PROMPT = """
