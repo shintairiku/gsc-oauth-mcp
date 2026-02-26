@@ -201,6 +201,10 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
+# Keep Next.js app utility sources tracked.
+!gsc-analyst/src/lib/
+!gsc-analyst/src/lib/**
+
 # Marimo
 marimo/_static/
 marimo/_lsp/

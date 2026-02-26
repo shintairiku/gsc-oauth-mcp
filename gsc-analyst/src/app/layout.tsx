@@ -1,9 +1,6 @@
 import type { Metadata } from "next";
-import { Geist } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
-
-const geist = Geist({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "GSC アナリスト",
@@ -18,7 +15,7 @@ export default function RootLayout({
   return (
     <ClerkProvider afterSignOutUrl="/sign-in">
       <html lang="ja">
-        <body className={geist.className}>{children}</body>
+        <body className="font-sans">{children}</body>
       </html>
     </ClerkProvider>
   );
