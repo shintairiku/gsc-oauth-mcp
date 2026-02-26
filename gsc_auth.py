@@ -4,15 +4,17 @@
   pip install google-auth google-auth-oauthlib google-api-python-client
 """
 
-import json
 from pathlib import Path
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
-# GSCの読み取りに必要なスコープ
-SCOPES = ["https://www.googleapis.com/auth/webmasters.readonly"]
+# GSC/GA4の読み取りに必要なスコープ
+SCOPES = [
+    "https://www.googleapis.com/auth/webmasters.readonly",
+    "https://www.googleapis.com/auth/analytics.readonly",
+]
 
 # ファイルパス設定
 CLIENT_SECRET_FILE = "client_secret_742231208085-8q1lbjmvbuennmmgnrvl41pjb5ruqrom.apps.googleusercontent.com.json"
@@ -55,26 +57,52 @@ def get_gsc_service(creds: Credentials):
     return build("searchconsole", "v1", credentials=creds)
 
 
-def verify_auth(service) -> None:
-    """認証確認: 管理下のサイト一覧を表示"""
+def get_ga4_data_service(creds: Credentials):
+    """GA4 Data APIサービスオブジェクトを返す"""
+    return build("analyticsdata", "v1beta", credentials=creds)
+
+
+def get_ga4_admin_service(creds: Credentials):
+    """GA4 Admin APIサービスオブジェクトを返す"""
+    return build("analyticsadmin", "v1beta", credentials=creds)
+
+
+def verify_gsc_auth(service) -> None:
+    """認証確認: GSCの管理サイト一覧を表示"""
     result = service.sites().list().execute()
     sites = result.get("siteEntry", [])
 
     if not sites:
-        print("[INFO] 管理サイトが見つかりませんでした")
+        print("[INFO] GSC 管理サイトが見つかりませんでした")
         return
 
-    print("[SUCCESS] 認証成功! 管理サイト一覧:")
+    print("[SUCCESS] GSC 認証成功! 管理サイト一覧:")
     for site in sites:
         print(f"  - {site['siteUrl']}  (権限: {site['permissionLevel']})")
+
+
+def verify_ga4_auth(admin_service) -> None:
+    """認証確認: GA4プロパティ一覧を表示"""
+    result = admin_service.properties().list(pageSize=20).execute()
+    properties = result.get("properties", [])
+
+    if not properties:
+        print("[INFO] GA4 プロパティが見つかりませんでした")
+        return
+
+    print("[SUCCESS] GA4 認証成功! プロパティ一覧:")
+    for prop in properties:
+        print(f"  - {prop.get('name', '不明')} ({prop.get('displayName', '名称なし')})")
 
 
 if __name__ == "__main__":
     print("[STEP 1] 認証情報を取得中...")
     creds = get_credentials()
 
-    print("[STEP 2] GSC APIサービスを構築中...")
-    service = get_gsc_service(creds)
+    print("[STEP 2] GSC/GA4 APIサービスを構築中...")
+    gsc_service = get_gsc_service(creds)
+    ga4_admin_service = get_ga4_admin_service(creds)
 
     print("[STEP 3] 疎通確認...")
-    verify_auth(service)
+    verify_gsc_auth(gsc_service)
+    verify_ga4_auth(ga4_admin_service)
