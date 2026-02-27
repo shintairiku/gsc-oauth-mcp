@@ -4,20 +4,49 @@
   pip install google-auth google-auth-oauthlib google-api-python-client
 """
 
-import json
+import errno
+import os
 from pathlib import Path
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
-# GSCの読み取りに必要なスコープ
-SCOPES = ["https://www.googleapis.com/auth/webmasters.readonly"]
+# GSC/GA4の読み取りに必要なスコープ
+SCOPES = [
+    "https://www.googleapis.com/auth/webmasters.readonly",
+    "https://www.googleapis.com/auth/analytics.readonly",
+]
 
 # ファイルパス設定
 CLIENT_SECRET_FILE = "client_secret_742231208085-8q1lbjmvbuennmmgnrvl41pjb5ruqrom.apps.googleusercontent.com.json"
 # CLIENT_SECRET_FILE = "client_secret_742231208085-hd4nk5m3mjpergfa3gcep2951e2au2sh.apps.googleusercontent.com.json"  # Google Cloud Consoleからダウンロード
 TOKEN_FILE = "token.json"                  # 認証後に自動生成されるキャッシュ
+
+
+def _run_oauth_local_server(flow: InstalledAppFlow) -> Credentials:
+    """
+    ローカルサーバーでOAuth認証を実行する。
+    既定ポートが使用中の場合は自動で別ポートにフォールバックする。
+    """
+    preferred_port = int(os.getenv("GOOGLE_OAUTH_LOCAL_PORT", "3000"))
+    candidate_ports = [preferred_port, 8080, 0]  # 0 はOSに空きポートを選ばせる
+
+    last_error: OSError | None = None
+    for port in candidate_ports:
+        try:
+            print(f"[INFO] OAuthローカルサーバーを起動します (port={port})")
+            return flow.run_local_server(port=port)
+        except OSError as exc:
+            if exc.errno == errno.EADDRINUSE:
+                print(f"[WARN] port={port} は使用中のため、別ポートで再試行します")
+                last_error = exc
+                continue
+            raise
+
+    if last_error:
+        raise last_error
+    raise RuntimeError("OAuthローカルサーバーの起動に失敗しました")
 
 
 def get_credentials() -> Credentials:
@@ -40,7 +69,7 @@ def get_credentials() -> Credentials:
         else:
             # 初回: ブラウザでOAuth認証
             flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET_FILE, SCOPES)
-            creds = flow.run_local_server(port=3000)
+            creds = _run_oauth_local_server(flow)
 
         # 次回のためにトークンをキャッシュ保存
         with open(TOKEN_FILE, "w") as f:
@@ -55,26 +84,60 @@ def get_gsc_service(creds: Credentials):
     return build("searchconsole", "v1", credentials=creds)
 
 
-def verify_auth(service) -> None:
-    """認証確認: 管理下のサイト一覧を表示"""
+def get_ga4_data_service(creds: Credentials):
+    """GA4 Data APIサービスオブジェクトを返す"""
+    return build("analyticsdata", "v1beta", credentials=creds)
+
+
+def get_ga4_admin_service(creds: Credentials):
+    """GA4 Admin APIサービスオブジェクトを返す"""
+    return build("analyticsadmin", "v1beta", credentials=creds)
+
+
+def verify_gsc_auth(service) -> None:
+    """認証確認: GSCの管理サイト一覧を表示"""
     result = service.sites().list().execute()
     sites = result.get("siteEntry", [])
 
     if not sites:
-        print("[INFO] 管理サイトが見つかりませんでした")
+        print("[INFO] GSC 管理サイトが見つかりませんでした")
         return
 
-    print("[SUCCESS] 認証成功! 管理サイト一覧:")
+    print("[SUCCESS] GSC 認証成功! 管理サイト一覧:")
     for site in sites:
         print(f"  - {site['siteUrl']}  (権限: {site['permissionLevel']})")
+
+
+def verify_ga4_auth(admin_service) -> None:
+    """認証確認: GA4プロパティ一覧を表示"""
+    result = admin_service.accountSummaries().list(pageSize=200).execute()
+    account_summaries = result.get("accountSummaries", [])
+
+    properties = []
+    for account in account_summaries:
+        for prop in account.get("propertySummaries", []):
+            properties.append({
+                "name": prop.get("property", "不明"),
+                "displayName": prop.get("displayName", "名称なし"),
+            })
+
+    if not properties:
+        print("[INFO] GA4 プロパティが見つかりませんでした")
+        return
+
+    print("[SUCCESS] GA4 認証成功! プロパティ一覧:")
+    for prop in properties:
+        print(f"  - {prop.get('name', '不明')} ({prop.get('displayName', '名称なし')})")
 
 
 if __name__ == "__main__":
     print("[STEP 1] 認証情報を取得中...")
     creds = get_credentials()
 
-    print("[STEP 2] GSC APIサービスを構築中...")
-    service = get_gsc_service(creds)
+    print("[STEP 2] GSC/GA4 APIサービスを構築中...")
+    gsc_service = get_gsc_service(creds)
+    ga4_admin_service = get_ga4_admin_service(creds)
 
     print("[STEP 3] 疎通確認...")
-    verify_auth(service)
+    verify_gsc_auth(gsc_service)
+    verify_ga4_auth(ga4_admin_service)
