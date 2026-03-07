@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { UserButton } from "@clerk/nextjs";
 import { currentUser } from "@clerk/nextjs/server";
-import { GscSitesPanel } from "@/components/gsc-sites-panel";
+import { GscChatPanel } from "@/components/gsc-chat-panel";
 
 type DashboardSearchParams = Promise<{
   gsc?: string;
@@ -13,7 +13,6 @@ export default async function DashboardPage({
 }: {
   searchParams: DashboardSearchParams;
 }) {
-  // ログイン中ユーザー情報とOAuth結果クエリを画面表示に使う。
   const user = await currentUser();
   const params = await searchParams;
   const isConnected = params.gsc === "connected";
@@ -21,41 +20,36 @@ export default async function DashboardPage({
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* ヘッダー */}
-      <header className="bg-white border-b px-6 py-4 flex items-center justify-between">
+      <header className="flex items-center justify-between border-b bg-white px-6 py-4">
         <h1 className="text-lg font-semibold">🔍 GSC アナリスト</h1>
         <UserButton />
       </header>
 
-      {/* メイン */}
-      <main className="max-w-2xl mx-auto mt-20 text-center px-4">
-        <p className="text-gray-500 text-sm mb-2">ログイン中</p>
-        <p className="text-xl font-medium mb-8">{user?.emailAddresses[0]?.emailAddress}</p>
-        <div className="space-y-4">
-          <p className="text-gray-600">
-            Google Search Console を連携してサイト一覧を取得してください
+      <main className="mx-auto w-full max-w-5xl px-4 py-8">
+        <div className="mb-6 rounded-xl border bg-white p-5 shadow-sm">
+          <p className="text-sm text-gray-500">ログイン中</p>
+          <p className="mt-1 text-lg font-medium text-gray-900">{user?.emailAddresses[0]?.emailAddress}</p>
+          <p className="mt-2 text-sm text-gray-600">
+            Google Search Console を連携し、サイトを選択してチャット分析できます。
           </p>
-          <Link
-            href="/api/auth/gsc"
-            className="inline-block rounded-md bg-blue-600 px-6 py-3 font-medium text-white hover:bg-blue-700"
-          >
-            Googleアカウントを連携
-          </Link>
-          {isConnected && (
-            <p className="text-sm text-green-700">
-              GSC OAuth連携に成功し、トークンを保存しました。
-            </p>
-          )}
-          {isError && (
-            <p className="text-sm text-red-700">
-              GSC OAuth連携に失敗しました: {params.reason ?? "unknown_error"}
-            </p>
-          )}
+
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <Link
+              href="/api/auth/gsc"
+              className="inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            >
+              Googleアカウントを連携
+            </Link>
+            {isConnected && <p className="text-sm text-green-700">GSC OAuth連携に成功しました。</p>}
+            {isError && (
+              <p className="text-sm text-red-700">
+                GSC OAuth連携に失敗しました: {params.reason ?? "unknown_error"}
+              </p>
+            )}
+          </div>
         </div>
 
-        <div className="mt-8">
-          <GscSitesPanel />
-        </div>
+        <GscChatPanel />
       </main>
     </div>
   );
