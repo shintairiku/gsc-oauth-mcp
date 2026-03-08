@@ -6,19 +6,9 @@ First, run the development server:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
 ## Environment Variables
 
@@ -30,22 +20,34 @@ CLERK_SECRET_KEY=...
 
 GOOGLE_OAUTH_CLIENT_ID=...
 GOOGLE_OAUTH_CLIENT_SECRET=...
-GOOGLE_OAUTH_REDIRECT_URI=http://localhost:3000/api/auth/gsc/callback
-# Optional (default: webmasters.readonly)
-# GOOGLE_OAUTH_SCOPES="https://www.googleapis.com/auth/webmasters.readonly"
+# /api/auth/google/callback を推奨
+# 既存の /api/auth/gsc/callback でも後方互換で動作します
+GOOGLE_OAUTH_REDIRECT_URI=http://localhost:3000/api/auth/google/callback
+# Optional (default: webmasters.readonly + analytics.readonly)
+# GOOGLE_OAUTH_SCOPES="https://www.googleapis.com/auth/webmasters.readonly https://www.googleapis.com/auth/analytics.readonly"
+
+# Supabase
+SUPABASE_URL=...
+SUPABASE_SERVICE_ROLE_KEY=...
+# Optional (default: gsc_oauth_tokens)
+# GOOGLE_OAUTH_TOKEN_TABLE=gsc_oauth_tokens
+
+ANTHROPIC_API_KEY=...
+# Optional
+# ANTHROPIC_MODEL=claude-3-5-sonnet-latest
 ```
 
-## Learn More
+## Features
 
-To learn more about Next.js, take a look at the following resources:
+- Google OAuth (single connection)
+- MCP-style analytics tools (GSC / GA4)
+- AI agent that selects tools from prompt intent
+- Unified chat UI (no provider selector)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## API Routes
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `GET /api/auth/google`
+- `GET /api/auth/google/callback`
+- `GET /api/sites` (GSC site list)
+- `GET /api/ga4/properties` (GA4 property list)
+- `POST /api/chat` (`message` only, tool selection is automatic)

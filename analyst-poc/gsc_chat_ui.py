@@ -11,7 +11,6 @@
 import asyncio
 import os
 import threading
-from concurrent.futures import TimeoutError as FuturesTimeoutError
 from dotenv import load_dotenv
 import anthropic
 import streamlit as st
@@ -24,18 +23,15 @@ from mcp.client.stdio import stdio_client
 load_dotenv()
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 MODEL = "claude-opus-4-6"
-AGENT_TIMEOUT_SEC = int(os.getenv("AGENT_TIMEOUT_SEC", "180"))
 
 SYSTEM_PROMPT = """
-あなたはGoogle Search Console(GSC) と Google Analytics 4(GA4) のデータアナリストです。
-ユーザーの質問に答えるために、利用可能なツールを積極的に呼び出してください。
+あなたはGoogle Search Console(GSC)のデータアナリストです。
+ユーザーの質問に答えるために、利用可能なGSCツールを積極的に呼び出してください。
 
 利用可能なツール:
-- list_sites: GSC管理サイト一覧を取得
-- get_search_analytics: GSCのキーワード・ページ・日別・デバイス・国別データを取得
-- inspect_url: GSCで特定URLのインデックス状況を確認
-- list_ga4_properties: GA4プロパティ一覧を取得
-- get_ga4_report: GA4レポートを取得
+- list_sites: 管理サイト一覧を取得
+- get_search_analytics: キーワード・ページ・日別・デバイス・国別のパフォーマンスデータを取得
+- inspect_url: 特定URLのインデックス状況を確認
 
 データを取得したら、数字を引用しながら日本語で分かりやすく回答してください。
 """
@@ -46,9 +42,7 @@ SYSTEM_PROMPT = """
 _mcp_session: ClientSession | None = None
 _mcp_tools: list[dict] = []
 _loop: asyncio.AbstractEventLoop | None = None
-_mcp_thread: threading.Thread | None = None
 _ready_event = threading.Event()  # セッション確立完了の通知用
-_startup_error: Exception | None = None
 
 
 def mcp_tools_to_anthropic(mcp_tools) -> list[dict]:
@@ -69,31 +63,26 @@ async def _mcp_worker():
     セッション確立後は _ready_event でメインスレッドに通知し、
     shutdown_event が立つまで待機し続ける。
     """
-    global _mcp_session, _mcp_tools, _startup_error
+    global _mcp_session, _mcp_tools
 
-    try:
-        server_params = StdioServerParameters(
-            command="python",
-            args=["gsc_mcp_server.py"],
-        )
+    server_params = StdioServerParameters(
+        command="python",
+        args=["gsc_mcp_server.py"],
+    )
 
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
+    async with stdio_client(server_params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
 
-                tools_resp = await session.list_tools()
-                _mcp_session = session
-                _mcp_tools = mcp_tools_to_anthropic(tools_resp.tools)
+            tools_resp = await session.list_tools()
+            _mcp_session = session
+            _mcp_tools = mcp_tools_to_anthropic(tools_resp.tools)
 
-                # メインスレッドに「準備完了」を通知
-                _ready_event.set()
+            # メインスレッドに「準備完了」を通知
+            _ready_event.set()
 
-                # セッションをアプリ終了まで保持し続ける
-                await asyncio.get_event_loop().create_future()  # 永久に待機
-    except Exception as exc:
-        _startup_error = exc
-        _ready_event.set()
-        raise
+            # セッションをアプリ終了まで保持し続ける
+            await asyncio.get_event_loop().create_future()  # 永久に待機
 
 
 def _start_background_loop():
@@ -104,34 +93,14 @@ def _start_background_loop():
     _loop.run_until_complete(_mcp_worker())
 
 
-def _is_loop_alive() -> bool:
-    return _loop is not None and _loop.is_running() and not _loop.is_closed()
-
-
-def _ensure_mcp_started() -> None:
-    """MCPバックグラウンドを起動済み状態にする。未起動/停止時は再起動する。"""
-    global _mcp_thread, _startup_error
-
-    if _is_loop_alive() and _mcp_session is not None and _mcp_tools:
-        return
-
-    _ready_event.clear()
-    _startup_error = None
-
-    _mcp_thread = threading.Thread(target=_start_background_loop, daemon=True)
-    _mcp_thread.start()
-
-    if not _ready_event.wait(timeout=20):
-        raise RuntimeError("MCPサーバー起動がタイムアウトしました（20秒）")
-    if _startup_error is not None:
-        raise RuntimeError(f"MCPサーバー起動に失敗しました: {_startup_error}") from _startup_error
-    if not _is_loop_alive() or _mcp_session is None:
-        raise RuntimeError("MCPセッションの初期化に失敗しました")
-
-
 def get_mcp_session() -> tuple[ClientSession, list[dict]]:
     """MCPセッションを返す（初回のみバックグラウンド起動）"""
-    _ensure_mcp_started()
+    if "mcp_started" not in st.session_state:
+        st.session_state["mcp_started"] = True
+        t = threading.Thread(target=_start_background_loop, daemon=True)
+        t.start()
+        # サーバー起動完了をイベントで待つ（タイムアウト10秒）
+        _ready_event.wait(timeout=10)
     return _mcp_session, _mcp_tools
 
 
@@ -185,34 +154,24 @@ def run_agent_sync(user_message: str, history: list[dict]) -> tuple[str, list[di
     session, tools = get_mcp_session()
     messages = history + [{"role": "user", "content": user_message}]
 
-    if not _is_loop_alive():
-        raise RuntimeError("内部イベントループが停止しています。再実行してください。")
-
     future = asyncio.run_coroutine_threadsafe(
         _run_agent(session, tools, messages),
         _loop,
     )
-    try:
-        return future.result(timeout=AGENT_TIMEOUT_SEC)
-    except FuturesTimeoutError as exc:
-        future.cancel()
-        raise RuntimeError(
-            f"回答生成がタイムアウトしました（{AGENT_TIMEOUT_SEC}秒）。"
-            "質問範囲を狭めるか再実行してください。"
-        ) from exc
+    return future.result(timeout=60)
 
 
 # =====================
 # Streamlit UI
 # =====================
 st.set_page_config(
-    page_title="GSC/GA4 アナリスト",
+    page_title="GSC アナリスト",
     page_icon="🔍",
     layout="centered",
 )
 
-st.title("🔍 GSC/GA4 アナリスト")
-st.caption("Google Search Console と GA4 のデータを自然言語で質問できます")
+st.title("🔍 GSC アナリスト")
+st.caption("Google Search Console のデータを自然言語で質問できます")
 
 # チャット履歴の初期化
 if "messages" not in st.session_state:
@@ -238,18 +197,13 @@ if prompt := st.chat_input("例: 先月のトップキーワードを教えて")
 
     # Claudeの回答を取得
     with st.chat_message("assistant"):
-        with st.spinner("GSC/GA4を調査中..."):
+        with st.spinner("GSCを調査中..."):
             # Anthropic API用の履歴形式に変換（tool_callsは除外）
             api_history = [
                 {"role": m["role"], "content": m["content"]}
                 for m in st.session_state.messages[:-1]  # 今のユーザー発言は除く
             ]
-            try:
-                answer, tool_calls = run_agent_sync(prompt, api_history)
-            except Exception as exc:
-                answer = f"エラーが発生しました: {exc}"
-                tool_calls = []
-                st.error(answer)
+            answer, tool_calls = run_agent_sync(prompt, api_history)
 
         st.markdown(answer)
 

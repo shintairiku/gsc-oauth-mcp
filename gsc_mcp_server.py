@@ -10,27 +10,38 @@ LLMがツールとして呼び出せる形にGSC APIをラップします。
 """
 
 import asyncio
+import os
 from datetime import date, timedelta
 
 import mcp.types as types
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 
-from gsc_auth import get_credentials, get_gsc_service
+from gsc_auth import (
+    get_credentials,
+    get_ga4_admin_service,
+    get_ga4_data_service,
+    get_gsc_service,
+)
 
 # =====================
 # 設定
 # =====================
 SITE_URL = "https://shintairiku.jp/"  # ご自身のサイトURLに変更
+GA4_PROPERTY_ID = os.getenv("GA4_PROPERTY_ID", "").strip()
 
 END_DATE = date.today() - timedelta(days=3)
 START_DATE = END_DATE - timedelta(days=29)
+GA4_END_DATE = date.today() - timedelta(days=1)
+GA4_START_DATE = GA4_END_DATE - timedelta(days=29)
 
 # =====================
-# GSCサービス初期化
+# GSC/GA4サービス初期化
 # =====================
 creds = get_credentials()
 gsc = get_gsc_service(creds)
+ga4_data = get_ga4_data_service(creds)
+ga4_admin = get_ga4_admin_service(creds)
 
 # =====================
 # MCPサーバー定義
@@ -96,6 +107,59 @@ async def list_tools() -> list[types.Tool]:
                 "required": ["url"],
             },
         ),
+        types.Tool(
+            name="list_ga4_properties",
+            description="Google Analytics 4 の参照可能なプロパティ一覧を返す",
+            inputSchema={
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        ),
+        types.Tool(
+            name="get_ga4_report",
+            description=(
+                "GA4 Data APIでレポートを取得する。"
+                "metrics/dimensions は GA4 API の正式名を指定する。"
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "property_id": {
+                        "type": "string",
+                        "description": "GA4プロパティID（省略時は環境変数 GA4_PROPERTY_ID）",
+                    },
+                    "metrics": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "指標名配列（例: ['sessions', 'activeUsers']）",
+                    },
+                    "dimensions": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "ディメンション名配列（例: ['date']）",
+                    },
+                    "start_date": {
+                        "type": "string",
+                        "description": "集計開始日 YYYY-MM-DD（省略時: 直近30日）",
+                    },
+                    "end_date": {
+                        "type": "string",
+                        "description": "集計終了日 YYYY-MM-DD（省略時: 昨日）",
+                    },
+                    "row_limit": {
+                        "type": "integer",
+                        "default": 10,
+                        "description": "取得件数（最大10000）",
+                    },
+                    "order_by_metric": {
+                        "type": "string",
+                        "description": "降順ソートする指標名（省略時は metrics の先頭）",
+                    },
+                },
+                "required": ["metrics"],
+            },
+        ),
     ]
 
 
@@ -149,6 +213,73 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
             f"インデックス許可: {index_status.get('indexingState', '不明')}"
         )
 
+    elif name == "list_ga4_properties":
+        response = ga4_admin.accountSummaries().list(pageSize=200).execute()
+        account_summaries = response.get("accountSummaries", [])
+        lines = []
+        for account in account_summaries:
+            account_name = account.get("account", "不明")
+            for prop in account.get("propertySummaries", []):
+                prop_name = prop.get("property", "")
+                prop_id = prop_name.split("/")[-1] if "/" in prop_name else prop_name
+                lines.append(
+                    f"- property_id:{prop_id} display_name:{prop.get('displayName', '名称なし')} "
+                    f"account:{account_name} property_type:{prop.get('propertyType', '不明')}"
+                )
+        text = "\n".join(lines) if lines else "GA4プロパティが見つかりませんでした"
+
+    elif name == "get_ga4_report":
+        metrics = arguments["metrics"]
+        dimensions = arguments.get("dimensions", [])
+        row_limit = min(int(arguments.get("row_limit", 10)), 10000)
+        start = arguments.get("start_date", GA4_START_DATE.isoformat())
+        end = arguments.get("end_date", GA4_END_DATE.isoformat())
+
+        property_id = str(arguments.get("property_id", GA4_PROPERTY_ID)).strip()
+        if not property_id:
+            text = (
+                "GA4 property_id が未指定です。"
+                "ツール引数 property_id か環境変数 GA4_PROPERTY_ID を設定してください。"
+            )
+            return [types.TextContent(type="text", text=text)]
+
+        body = {
+            "dateRanges": [{"startDate": start, "endDate": end}],
+            "metrics": [{"name": m} for m in metrics],
+            "dimensions": [{"name": d} for d in dimensions],
+            "limit": row_limit,
+        }
+
+        order_metric = arguments.get("order_by_metric") or metrics[0]
+        body["orderBys"] = [
+            {"metric": {"metricName": order_metric}, "desc": True},
+        ]
+
+        response = ga4_data.properties().runReport(
+            property=f"properties/{property_id}",
+            body=body,
+        ).execute()
+        rows = response.get("rows", [])
+
+        lines = [
+            (
+                f"property_id: {property_id} / 期間: {start} 〜 {end}\n"
+                f"dimensions: {dimensions if dimensions else 'なし'} / metrics: {metrics}"
+            )
+        ]
+        for row in rows:
+            dim_values = [v.get("value", "") for v in row.get("dimensionValues", [])]
+            metric_values = [v.get("value", "") for v in row.get("metricValues", [])]
+
+            dim_text = ", ".join(
+                f"{k}:{v}" for k, v in zip(dimensions, dim_values, strict=False)
+            ) or "(dimensionなし)"
+            metric_text = ", ".join(
+                f"{k}:{v}" for k, v in zip(metrics, metric_values, strict=False)
+            )
+            lines.append(f"{dim_text} | {metric_text}")
+        text = "\n".join(lines) if rows else "GA4データなし"
+
     else:
         text = f"未知のツール: {name}"
 
@@ -161,4 +292,6 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
 async def main():
     async with stdio_server() as (read_stream, write_stream):
         await server.run(read_stream, write_stream, server.create_initialization_options())
+
+
 asyncio.run(main())

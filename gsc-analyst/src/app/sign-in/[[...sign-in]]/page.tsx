@@ -1,10 +1,5 @@
-import { SignIn } from "@clerk/nextjs";
+import { SignInView } from "@/components/sign-in-view";
 
 export default function SignInPage() {
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      {/* サインイン後はdashboardへ戻す。 */}
-      <SignIn fallbackRedirectUrl="/dashboard" />
-    </div>
-  );
+  return <SignInView />;
 }

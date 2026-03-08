@@ -3,8 +3,8 @@ import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "GSC アナリスト",
-  description: "Google Search Console を自然言語で分析",
+  title: "Analytics アナリスト",
+  description: "Google Search Console / GA4 を自然言語で分析",
 };
 
 export default function RootLayout({
