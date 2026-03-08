@@ -1,31 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { getRequiredEnv } from "@/lib/server/env";
-import { getTokenFromSupabase, withRefreshedAccessToken } from "@/lib/server/gsc/token";
-
-type GoogleSitesResponse = {
-  siteEntry?: Array<{
-    siteUrl: string;
-    permissionLevel: string;
-  }>;
-};
-
-async function fetchSites(accessToken: string): Promise<GoogleSitesResponse> {
-  const response = await fetch("https://www.googleapis.com/webmasters/v3/sites", {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Google sites fetch failed: ${response.status} ${errorText}`);
-  }
-
-  return (await response.json()) as GoogleSitesResponse;
-}
+import { listGscSites } from "@/lib/server/analytics/providers/gsc";
+import { getGoogleTokenFromSupabase, withRefreshedGoogleAccessToken } from "@/lib/server/google/token";
 
 export async function GET() {
   try {
@@ -36,25 +13,20 @@ export async function GET() {
 
     const supabaseUrl = getRequiredEnv("SUPABASE_URL");
     const serviceRoleKey = getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY");
-    const token = await getTokenFromSupabase(userId, supabaseUrl, serviceRoleKey);
+    const token = await getGoogleTokenFromSupabase(userId, supabaseUrl, serviceRoleKey);
 
     if (!token) {
-      return NextResponse.json({ error: "gsc_not_connected" }, { status: 404 });
+      return NextResponse.json({ error: "google_not_connected" }, { status: 404 });
     }
 
-    const sitesResponse = await withRefreshedAccessToken({
+    const sites = await withRefreshedGoogleAccessToken({
       userId,
       token,
       supabaseUrl,
       serviceRoleKey,
-      runWithToken: (accessToken) => fetchSites(accessToken),
+      runWithToken: (accessToken) => listGscSites(accessToken),
       shouldRefreshRetry: () => true,
     });
-    const sites =
-      sitesResponse.siteEntry?.map((site) => ({
-        siteUrl: site.siteUrl,
-        permissionLevel: site.permissionLevel,
-      })) ?? [];
 
     return NextResponse.json(
       {
@@ -73,7 +45,7 @@ export async function GET() {
       }
       if (error.message === "refresh_token_missing") {
         return NextResponse.json(
-          { error: "refresh_token_missing", action: "reconnect_gsc" },
+          { error: "refresh_token_missing", action: "reconnect_google" },
           { status: 401 },
         );
       }
