@@ -51,6 +51,12 @@ ANTHROPIC_API_KEY=...
 - AI agent that selects tools from prompt intent
 - Unified chat UI (no provider selector)
 
+## Structure
+
+- `frontend/`: 画面実装と UI コンポーネント
+- `backend/`: API ハンドラ実装とサーバー処理
+- `src/app/`: Next.js App Router のエントリポイント。`frontend` / `backend` の薄いラッパーのみ
+
 ## API Routes
 
 - `GET /api/auth/google`

@@ -1,4 +1,4 @@
-import { SignInView } from "@/components/sign-in-view";
+import { SignInView } from "@frontend/components/sign-in-view";
 
 export default function SignInPage() {
   return <SignInView />;

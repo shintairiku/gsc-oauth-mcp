@@ -2,8 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { Button } from "@/components/ui/button";
-import type { GoogleAuthMode } from "@/lib/server/google/auth-mode";
+import { Button } from "@frontend/components/ui/button";
+import type { GoogleAuthMode } from "@/lib/google-auth-mode";
 
 type AuthModeToggleProps = {
   initialMode: GoogleAuthMode;
