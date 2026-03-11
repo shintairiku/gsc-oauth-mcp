@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { UserButton } from "@clerk/nextjs";
 import { currentUser } from "@clerk/nextjs/server";
+import { AuthModeToggle } from "@/components/auth-mode-toggle";
 import { GscChatPanel } from "@/components/gsc-chat-panel";
 import { getGoogleAuthMode } from "@/lib/server/google/auth-mode";
 
@@ -41,28 +42,7 @@ export default async function DashboardPage({
 
           <div className="mt-4">
             <p className="mb-2 text-sm font-medium text-gray-700">認証方式</p>
-            <div className="flex flex-wrap gap-2">
-              <Link
-                href="/api/auth/mode?mode=oauth&redirect=/dashboard"
-                className={`rounded-md border px-3 py-2 text-sm font-medium ${
-                  authMode === "oauth"
-                    ? "border-blue-600 bg-blue-600 text-white"
-                    : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-                }`}
-              >
-                OAuth認証
-              </Link>
-              <Link
-                href="/api/auth/mode?mode=service_account&redirect=/dashboard"
-                className={`rounded-md border px-3 py-2 text-sm font-medium ${
-                  authMode === "service_account"
-                    ? "border-emerald-600 bg-emerald-600 text-white"
-                    : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-                }`}
-              >
-                サービスアカウント認証
-              </Link>
-            </div>
+            <AuthModeToggle initialMode={authMode} />
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-3">

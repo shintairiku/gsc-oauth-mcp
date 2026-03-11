@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  type GoogleAuthMode,
   GOOGLE_AUTH_MODE_COOKIE_NAME,
   parseGoogleAuthMode,
 } from "@/lib/server/google/auth-mode";
@@ -11,14 +12,7 @@ function resolveRedirectPath(value: string | null): string {
   return value;
 }
 
-export async function GET(req: NextRequest) {
-  const mode = parseGoogleAuthMode(req.nextUrl.searchParams.get("mode"));
-  const redirectPath = resolveRedirectPath(req.nextUrl.searchParams.get("redirect"));
-  const url = req.nextUrl.clone();
-  url.pathname = redirectPath;
-  url.search = "";
-
-  const response = NextResponse.redirect(url);
+function buildResponseWithCookie(mode: GoogleAuthMode, response: NextResponse): NextResponse {
   response.cookies.set({
     name: GOOGLE_AUTH_MODE_COOKIE_NAME,
     value: mode,
@@ -30,4 +24,21 @@ export async function GET(req: NextRequest) {
   });
 
   return response;
+}
+
+export async function GET(req: NextRequest) {
+  const mode = parseGoogleAuthMode(req.nextUrl.searchParams.get("mode"));
+  const redirectPath = resolveRedirectPath(req.nextUrl.searchParams.get("redirect"));
+  const url = req.nextUrl.clone();
+  url.pathname = redirectPath;
+  url.search = "";
+
+  return buildResponseWithCookie(mode, NextResponse.redirect(url));
+}
+
+export async function POST(req: NextRequest) {
+  const body = (await req.json().catch(() => null)) as { mode?: string } | null;
+  const mode = parseGoogleAuthMode(body?.mode);
+
+  return buildResponseWithCookie(mode, NextResponse.json({ ok: true, mode }));
 }
